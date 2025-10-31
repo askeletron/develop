@@ -1,6 +1,5 @@
 import telebot
 import telebot.types
-import telebot.types
 from config import TELETOEKN as il
 import os
 import re
@@ -10,13 +9,13 @@ bot = telebot.TeleBot(il)
 
 api = SoundcloudAPI()  
 
-data = {}
-busychats = []
+data = {} #  хранение информации о пользователе (сохраняет текущую позицию пользователя в плейлисте)
+busychats = [] #  список занятых чатов, 
 
 commandslist = "\n\n-start\n-playmusic <имя автора латинскими буквами, без пробелов> <название песни только латинскими>\n-nextsong (играет следующую песню в вашем плейлисте)\n-savetrack <имя автора латинскими буквами, без пробелов> <название песни только латинскими>\n-showplaylist\n-help"
 
 def clrfromlist(id):
-    """убирает со списка занятых чатов указанный чат"""
+    """убирает с списка занятых чатов указанный чат"""
     if id in busychats:
         busychats.pop(busychats.index(id))
 
@@ -29,7 +28,7 @@ def toname(mesg):
         if type(mesg) == telebot.types.Message:
             minind=1
             txtfr = mesg.text
-        txtfr = re.sub(r'[^a-zA-Z0-9\s]', ' ', txtfr)
+        txtfr = re.sub(r'[^a-zA-Z0-9\-\s]', ' ', txtfr)
         a = txtfr.lower().split()
         autho = a[minind]
         for i in range(len(a)):
@@ -82,19 +81,14 @@ def createtrack(mesg,id):
         clrfromlist(id.from_user.id)
         bot.reply_to(id,f"не удалось; {"превышено время ожидания" if type(err) == TimeoutError else str(err)}")
 
-def writedata(name,data:list):
+def writedata(mesg):
     """вписывает новую информацию в userdata.txt пользователя, если папка или файл не существуют - создаёт то, чего не хватает."""
-    tostrname = ""
-    for i in range(len(data)):
-        if i!= len(data)-1:
-            tostrname+=f"{data[i]} "
-        else:
-            tostrname+=f"{data[i]}"
-
-    if checktrackexist(tostrname) == False:
+    
+    if checktrackexist(mesg) == False:
         return
     print("passed")
-    dest = checkfold(name)
+    filt = toname(mesg)
+    dest = checkfold(mesg.from_user.id)
     if not os.path.exists(fr"{dest}\userdata.txt"):
         with open(fr"{dest}\userdata.txt","x"): pass
     with open(fr"{dest}\userdata.txt","r",encoding="utf-8") as file:
@@ -102,13 +96,15 @@ def writedata(name,data:list):
         tup = file.read().split()
         for i in range(len(tup)):
             if i%2==0:
-                if tup[i]==data[0] and tup[i+1] ==data[1]:
+                if tup[i]== filt[0] and tup[i+1] ==filt[1]:
                     found = True
                     break
         if not found:
             with open(fr"{dest}\userdata.txt","a",encoding="utf-8") as file:
-                for i in data:
+                for i in filt:
                     file.write(f"{i} ")
+            bot.reply_to(mesg,'Успешно добавлено')
+            
 
 def checkfold(name):
     """проверка существования папки, если нет то создать. Возвращает местоположение файла"""
@@ -124,7 +120,6 @@ def checkfold(name):
 @bot.message_handler(commands=['start'])
 def handle_start_help(message):
     bot.reply_to(message,'Здравствуй. Это teleplayer бот!! Этот бот сохраняет песни и хранит их на компе либо в колледже либо у меня дома. Напиши /help для списка команд \nПоделитесь своей любимой песней прям в чате!!\n(создан для дз)')
-    #playmusic (/playmusic <имя автора ЛАТИНСКИМИ буквами, без пробелов> <название песни (тоже латинскими)>).\nplayplaylist (/playmusic <имя автора ЛАТИНСКИМИ буквами, без пробелов> <название плейлиста (тоже латинскими)>)\n
 
 @bot.message_handler(commands=['help'])
 def handle_start_help(message):
@@ -171,7 +166,7 @@ def handle_start_help(message):
 def handle_start_help(message):
     """сохранение трэка в файл пользователя (плейлист)"""
     if message.from_user.id not in busychats:
-        writedata(message.from_user.id,toname(f"{message.text.split()[1]} {message.text.split()[2]}"))
+        writedata(message)
     else:
         bot.send_message(message.chat.id,f'Занят!!')
 
