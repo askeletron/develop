@@ -1,5 +1,6 @@
 import telebot
 import telebot.types
+import telebot.types
 from config import TELETOEKN as il
 import os
 import re
@@ -9,12 +10,13 @@ bot = telebot.TeleBot(il)
 
 api = SoundcloudAPI()  
 
-data = []
+data = {}
 busychats = []
 
-commandslist = "\n\n-start\n-playmusic <имя автора латинскими буквами, без пробелов> <название песни только латинскими>\n-playplaylist\n-savetrack <имя автора латинскими буквами, без пробелов> <название песни только латинскими>\n-showplaylist\n-help"
+commandslist = "\n\n-start\n-playmusic <имя автора латинскими буквами, без пробелов> <название песни только латинскими>\n-nextsong (играет следующую песню в вашем плейлисте)\n-savetrack <имя автора латинскими буквами, без пробелов> <название песни только латинскими>\n-showplaylist\n-help"
 
 def clrfromlist(id):
+    """убирает со списка занятых чатов указанный чат"""
     if id in busychats:
         busychats.pop(busychats.index(id))
 
@@ -23,15 +25,18 @@ def toname(mesg):
     try:
         txet = ""
         txtfr = mesg
+        minind = 0
+        if type(mesg) == telebot.types.Message:
+            minind=1
+            txtfr = mesg.text
         txtfr = re.sub(r'[^a-zA-Z0-9\s]', ' ', txtfr)
         a = txtfr.lower().split()
-        autho = a[0]
+        autho = a[minind]
         for i in range(len(a)):
-            if i > 0:
+            if i > minind:
                 txet+=str(a[i])
                 if i < len(a)-1:
                     txet+=" "
-        txet = re.sub(r'[^a-zA-Z0-9\s]', ' ', txet)
         txet = txet.replace(' ', '-')
 
         return [autho,txet]
@@ -39,7 +44,7 @@ def toname(mesg):
         return False
 
 def checktrackexist(mesg):
-    """проверяет существование трэка на серверах soundcloud"""
+    """проверяет существование трэка на серверах soundcloud и возваращает трек, иначе False"""
     try:
         autho = ""
         txet = ""
@@ -59,23 +64,23 @@ def createtrack(mesg,id):
     """скачивает новый трэк, скидывает и затем удаляет"""
     busychats.append(id.from_user.id)
     try:
+        
         track = checktrackexist(mesg)
         
         assert type(track) is Track
 
-        bot.send_message(id.chat.id,f'Скидываю: {track.label_name}\nАвтор: {track.artist}')
+        bot.reply_to(id,f'Загружаю: {track.title}\nАвтор: {track.artist}')
         filename = fr'temp\music.mp3'
         with open(filename, 'wb+') as file:
             track.write_mp3_to(file)
-        with open(filename, 'rb') as file:
             bot.send_voice(id.chat.id, file)
-
+        
         os.remove(filename)
         clrfromlist(id.from_user.id)
     except Exception as err:
         print(err)
         clrfromlist(id.from_user.id)
-        bot.send_message(id.chat.id,'не найдено')
+        bot.reply_to(id,f"не удалось; {"превышено время ожидания" if type(err) == TimeoutError else str(err)}")
 
 def writedata(name,data:list):
     """вписывает новую информацию в userdata.txt пользователя, если папка или файл не существуют - создаёт то, чего не хватает."""
@@ -90,6 +95,8 @@ def writedata(name,data:list):
         return
     print("passed")
     dest = checkfold(name)
+    if not os.path.exists(fr"{dest}\userdata.txt"):
+        with open(fr"{dest}\userdata.txt","x"): pass
     with open(fr"{dest}\userdata.txt","r",encoding="utf-8") as file:
         found=False
         tup = file.read().split()
@@ -129,28 +136,32 @@ def handle_start_help(message):
 def handle_start_help(message):
     """играет музыку"""
     if message.from_user.id not in busychats:
-        createtrack(f"{message.text.split()[1]} {message.text.split()[2]}",message)
+        createtrack(message,message)
     else:
         bot.send_message(message.chat.id,f'Занят!!')
 
-@bot.message_handler(commands=['playplaylist'])
+@bot.message_handler(commands=['nextsong'])
 def handle_start_help(message):
-    """играет музыку с плейлиста пользователя, ту песню, которую он выбрал цифрой после команды"""
+    """играет следующую музыку с плейлиста пользователя"""
     if message.from_user.id not in busychats:
-        textspl = message.text.split()
-        if len(message.text.split()) < 2:
-            bot.send_message(message.chat.id,f'неправильно?')
-            return
+
         datadest = fr"{checkfold(message.from_user.id)}\\userdata.txt"
         if os.path.exists(datadest):
             with open(datadest,"r") as file:
                 listreade = file.read().split()
+                
+                if not message.from_user.id in data:   # создание информации о пользователе в словаре data
+                    data[message.from_user.id] = 0
+                else:
+                    if data[message.from_user.id] < len(listreade)//2: data[message.from_user.id] += 2
+                    else: data[message.from_user.id] = 0
+                print(data)
                 for i in range(len(listreade)):
-                    if i == int(textspl[1]) and i%2==0:
-                        bot.send_message(message.chat.id,f'скидываю?')
+                    if i == data[message.from_user.id] and i%2==0:
+                        bot.reply_to(message,'Скидываю')
                         createtrack(f"{listreade[i]} {listreade[i+1]}",message)
         else:
-            bot.send_message(message.chat.id,f'Плейлиста не существует')
+            bot.reply_to(message,'Плейлиста не существует')
     else:
         bot.send_message(message.chat.id,f'Занят!!')
 
@@ -158,6 +169,7 @@ def handle_start_help(message):
 
 @bot.message_handler(commands=['savetrack'])
 def handle_start_help(message):
+    """сохранение трэка в файл пользователя (плейлист)"""
     if message.from_user.id not in busychats:
         writedata(message.from_user.id,toname(f"{message.text.split()[1]} {message.text.split()[2]}"))
     else:
@@ -167,6 +179,7 @@ def handle_start_help(message):
 
 @bot.message_handler(commands=['showplaylist'])
 def handle_start_help(message):
+    """отправляет плейлист пользователя"""
     if message.from_user.id not in busychats:
         if os.path.exists(fr"{checkfold(message.from_user.id)}\userdata.txt"):
             listofmusics="Список ваших песен\n"
@@ -174,7 +187,7 @@ def handle_start_help(message):
                 ls = file.read().split()
                 for x in range(len(ls)):
                     if x%2==0:
-                        listofmusics+=f"{x}:{ls[x]} "
+                        listofmusics+=f"{ls[x]} "
                         listofmusics+=f"{ls[x+1]}\n"
             bot.send_message(message.chat.id,listofmusics)
         else:
@@ -182,15 +195,8 @@ def handle_start_help(message):
     else:
         bot.send_message(message.chat.id,f'Занят!!')
 
-@bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
-    if call.data == "savetrack":
-            bot.send_message(call.message.chat.id, "ббббред")
-    elif call.data == "onblack":
-            bot.send_message(call.message.chat.id, "бббб")
-
-@bot.message_handler(func=lambda call: True)
-def send_welcome(call):
-    bot.send_message(call.chat.id,f"''{call.text}'' :skull: :skull: :nerd_emoji:")
+# @bot.message_handler(func=lambda call: True)
+# def send_welcome(call):
+#     bot.send_message(call.chat.id,f"''{call.text}'' :skull: :skull: :nerd_emoji:")
 
 bot.infinity_polling()
